@@ -199,7 +199,34 @@ class PHALP(nn.Module):
                 
                 ############ HMAR ##############
                 detections = self.get_human_features(image_frame, pred_masks, pred_bbox, pred_bbox_pad, pred_scores, frame_name, pred_classes, t_, measurments, gt_tids, gt_annots, extra_data)
-
+                '''
+                detection_data = {
+            "bbox": np.array([bbox[p_][0], bbox[p_][1], (bbox[p_][2] - bbox[p_][0]), (bbox[p_][3] - bbox[p_][1])]),
+            "mask": rles_list[i],
+            "conf": score[p_], 
+            "appe": appe_embedding[i].cpu().numpy(), 
+            "pose": pose_embedding[i].numpy(), 
+            "loca": loca_embedding[i].cpu().numpy(), 
+            "uv": uv_vector[i].cpu().numpy(), 
+            "embedding": full_embedding[i], 
+            "center": center_list[i],
+            "scale": scale_list[i],
+            "smpl": pred_smpl_params[i],
+            "camera": pred_cam_[i].cpu().numpy(),
+            "camera_bbox": hmar_out['pred_cam'][i].cpu().numpy(),
+            "3d_joints": pred_joints[i].cpu().numpy(),
+            "2d_joints": pred_joints_2d_[i].cpu().numpy(),
+            "size": [img_height, img_width],
+            "img_path": frame_name,
+            "img_name": frame_name.split('/')[-1] if isinstance(frame_name, str) else None,
+            "class_name": cls_id[p_],
+            "time": t_,
+            "ground_truth": gt[p_],
+            "annotations": ann[p_],
+            "extra_data": extra_data[p_] if extra_data is not None else None
+        }
+                '''
+                
                 ############ tracking ##############
                 self.tracker.predict()
                 self.tracker.update(detections, t_, frame_name, self.cfg.phalp.shot)
