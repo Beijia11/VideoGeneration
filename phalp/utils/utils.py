@@ -209,7 +209,7 @@ def perspective_projection(points, rotation, translation,
     # Apply camera intrinsics
     projected_points = torch.einsum('bij,bkj->bki', K, projected_points)
 
-    return projected_points[:, :, :-1]
+    return K,projected_points[:, :, :-1]
         
 def compute_uvsampler(vt, ft, tex_size=6):
     """

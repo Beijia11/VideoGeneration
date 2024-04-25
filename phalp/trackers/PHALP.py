@@ -33,7 +33,7 @@ from phalp.utils.utils_detectron2 import (DefaultPredictor_Lazy,
 from phalp.utils.utils_download import cache_url
 from phalp.visualize.postprocessor import Postprocessor
 from phalp.visualize.visualizer import Visualizer
-
+from scipy.spatial.transform import Rotation as R
 log = get_pylogger(__name__)
 
 class PHALP(nn.Module):
@@ -206,7 +206,12 @@ class PHALP(nn.Module):
                 'frame_index': [],
                 'frame_name': [],
                 'smpl_parameters': [],
-                'camera_data': []
+                'camera_data': [],
+                'K_matrix':[],
+                "rotation":[],
+                "translation":[],
+                "2d_joints" :[],
+                "2d_vertices":[]
                 }
                 
                 for detection_data in detection_data_list:
@@ -214,7 +219,11 @@ class PHALP(nn.Module):
                     frame_data['camera_data'].append(detection_data['camera'])  # camera
                     frame_data['frame_name'].append(detection_data['img_path'])  
                     frame_data['frame_index'].append(detection_data['time'])  
-
+                    frame_data['K_matrix'].append(detection_data['K_matrix'])
+                    frame_data["rotation"].append(detection_data['rotation'])
+                    frame_data["translation"].append(detection_data['translation'])
+                    frame_data["2d_joints"].append(detection_data['2d_joints'])
+                    frame_data["2d_vertices"].append(detection_data['2d_vertices'])
                 all_frames_data.append(frame_data)
             
             directory = os.path.join('outputs', '_PKL', video_name)
@@ -224,7 +233,7 @@ class PHALP(nn.Module):
                 os.makedirs(directory, exist_ok=True)
             with open(filepath, 'wb') as pickle_file:
                 pickle.dump(all_frames_data, pickle_file)
-
+                
             print(f"Data has been saved to {filepath}")
             
             '''
@@ -437,7 +446,7 @@ class PHALP(nn.Module):
 
         if(NPEOPLE==0): return []
 
-        img_height, img_width, new_image_size, left, top = measurments                
+        img_height, img_width, new_image_size, left, top = measurments               
         ratio = 1.0/int(new_image_size)*self.cfg.render.res
         masked_image_list = []
         center_list = []
@@ -447,7 +456,7 @@ class PHALP(nn.Module):
         for p_ in range(NPEOPLE):
             if bbox[p_][2]-bbox[p_][0]<self.cfg.phalp.small_w or bbox[p_][3]-bbox[p_][1]<self.cfg.phalp.small_h:
                 continue
-            masked_image, center_, scale_, rles, center_pad, scale_pad = self.get_croped_image(image, bbox[p_], bbox_pad[p_], seg_mask[p_])
+            masked_image, center_, scale_, rles, center_pad, scale_pad = self.get_croped_image(image, bbox[p_], bbox_pad[p_], seg_mask[p_]) 
             masked_image_list.append(masked_image)
             center_list.append(center_pad)
             scale_list.append(scale_pad)
@@ -465,12 +474,13 @@ class PHALP(nn.Module):
             uv_vector       = hmar_out['uv_vector']
             appe_embedding  = self.HMAR.autoencoder_hmar(uv_vector, en=True)
             appe_embedding  = appe_embedding.view(appe_embedding.shape[0], -1)
-            pred_smpl_params, pred_joints_2d, pred_joints, pred_cam  = self.HMAR.get_3d_parameters(hmar_out['pose_smpl'], hmar_out['pred_cam'],
+            pred_smpl_params,pred_vertices_2d, pred_joints_2d, pred_joints,pred_vertices, pred_cam,K_matrix,rotation,translation  = self.HMAR.get_3d_parameters(hmar_out['pose_smpl'], hmar_out['pred_cam'],
                                                                                                center=(np.array(center_list) + np.array([left, top]))*ratio,
                                                                                                img_size=self.cfg.render.res,
                                                                                                scale=np.max(np.array(scale_list), axis=1, keepdims=True)*ratio)
             pred_smpl_params = [{k:v[i].cpu().numpy() for k,v in pred_smpl_params.items()} for i in range(BS)]
-            
+            _joints_2d=pred_joints_2d/self.cfg.render.res
+            pred_cam_ = pred_cam.view(BS, -1)
             if(self.cfg.phalp.pose_distance=="joints"):
                 pose_embedding  = pred_joints.cpu().view(BS, -1)
             elif(self.cfg.phalp.pose_distance=="smpl"):
@@ -510,13 +520,17 @@ class PHALP(nn.Module):
                                 "camera"          : pred_cam_[i].cpu().numpy(),
                                 "camera_bbox"     : hmar_out['pred_cam'][i].cpu().numpy(),
                                 "3d_joints"       : pred_joints[i].cpu().numpy(),
-                                "2d_joints"       : pred_joints_2d_[i].cpu().numpy(),
+                                "2d_joints"       : _joints_2d[i].cpu().numpy(),
+                                "2d_vertices"     : pred_vertices_2d[i].cpu().numpy(),
+                                # "pred_vertices"   : pred_vertices[i].cpu().numpy(),
                                 "size"            : [img_height, img_width],
                                 "img_path"        : frame_name,
                                 "img_name"        : frame_name.split('/')[-1] if isinstance(frame_name, str) else None,
                                 "class_name"      : cls_id[p_],
                                 "time"            : t_,
-
+                                "K_matrix"        : K_matrix,
+                                "rotation"        : rotation,
+                                "translation"     : translation,
                                 "ground_truth"    : gt[p_],
                                 "annotations"     : ann[p_],
                                 "extra_data"      : extra_data[p_] if extra_data is not None else None
