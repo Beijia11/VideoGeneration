@@ -18,7 +18,9 @@ import torchvision.transforms as T
 
 img_path='./outputs/_DEMO/run/img/000001.jpg'
 file_path='./outputs/_PKL/ski/smpl.pkl'
+
 device = torch.device('cuda:1')
+glctx = dr.RasterizeCudaContext(device=device)
 patch_size = 14
 feat_dim= 384
 dinov2_vits14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14').to(device)
@@ -41,18 +43,18 @@ with torch.no_grad():
     features_dict = dinov2_vits14.forward_features(imgs_tensor)
 
     features = features_dict['x_norm_patchtokens']
-features=features.reshape(1,feat_dim,patch_H,patch_W).to('cuda')
+features=features.reshape(1,feat_dim,patch_H,patch_W).to(device)
 
-smpl=SMPLLayer(model_path='./SMPL_NEUTRAL.pkl').to('cuda')
+smpl=SMPLLayer(model_path='./SMPL_NEUTRAL.pkl').to(device)
 with open(file_path, 'rb') as file:
     data = pickle.load(file)
 with open('./SMPL_NEUTRAL.pkl', 'rb') as file:
     smpl_data = pickle.load(file, encoding='latin1')
 faces=smpl_data['f'] #13776,3
 faces = faces.astype(np.float16)
-faces=torch.tensor(faces).to('cuda')
+faces=torch.tensor(faces).to(device)
 frame0=data[0]
-_2d_vertices_0=torch.tensor(frame0['2d_vertices'][0]).to('cuda') #[0,1]
+_2d_vertices_0=torch.tensor(frame0['2d_vertices'][0]).to(device) #[0,1]
 offset = ((max_dimension - W) // 2, (max_dimension - H) // 2)
 _2d_vertices_0[:, 0] = (_2d_vertices_0[:, 0] * max(W,H)-offset[0])/W*2-1
 _2d_vertices_0[:, 1] = _2d_vertices_0[:, 1] * max(W,H)-offset[1]/H*2-1   #[6890, 2] [-1,1]
@@ -69,13 +71,13 @@ render_image=torch.tensor(len(data))
 for frame in data:
     frame_index = frame['frame_index'][0]
     frame_name = frame['frame_name'][0]
-    global_orient = torch.tensor(frame['smpl_parameters'][0]['global_orient'], dtype=torch.float32).unsqueeze(0).to('cuda')
-    body_pose = torch.tensor(frame['smpl_parameters'][0]['body_pose'], dtype=torch.float32).unsqueeze(0).to('cuda')
-    betas = torch.tensor(frame['smpl_parameters'][0]['betas'], dtype=torch.float32).unsqueeze(0).to('cuda')
+    global_orient = torch.tensor(frame['smpl_parameters'][0]['global_orient'], dtype=torch.float32).unsqueeze(0).to(device)
+    body_pose = torch.tensor(frame['smpl_parameters'][0]['body_pose'], dtype=torch.float32).unsqueeze(0).to(device)
+    betas = torch.tensor(frame['smpl_parameters'][0]['betas'], dtype=torch.float32).unsqueeze(0).to(device)
     translation=frame['translation'][0]
     K_matrix=frame['K_matrix'][0]
-    rotation=frame['rotation'][0].to('cuda')
-    _2d_vertices=torch.tensor(frame['2d_vertices'][0]).to('cuda') #[0,1]
+    rotation=frame['rotation'][0].to(device)
+    _2d_vertices=torch.tensor(frame['2d_vertices'][0]).to(device) #[0,1]
     output = smpl.forward(
             betas=betas,
             body_pose=body_pose,
@@ -88,7 +90,6 @@ for frame in data:
     vertices=output.vertices.clone()
     homogeneous_vertices = torch.cat([vertices, torch.ones_like(vertices[:, :, :1])], dim=-1).to(device)
     faces=faces.clone().to(torch.int32).to(device)
-    glctx = dr.RasterizeCudaContext(device=device)
     rast_out, rast_out_db = dr.rasterize(glctx, homogeneous_vertices, faces, resolution=[newH-newH%8, newW-newW%8])
     rast_out=rast_out.to(device)
     interpolated_colors,_ = dr.interpolate(point_features, rast_out,faces)
