@@ -17,7 +17,7 @@ import torchvision.transforms as T
 
 
 img_path='./outputs/_DEMO/run/img/000001.jpg'
-file_path='./outputs/_PKL/ski/smpl.pkl'
+file_path='./outputs/_PKL/run/smpl.pkl'
 
 device = torch.device('cuda:1')
 glctx = dr.RasterizeCudaContext(device=device)
@@ -66,6 +66,7 @@ point_features = torch.nn.functional.grid_sample(   #torch.Size([1, 384, 6890, 1
     padding_mode='border',  # 可以使用 'zeros' 或 'reflection'
     align_corners=True
 ).squeeze(3).to(device)
+point_features=point_features.permute(0, 2, 1)
 render_image=torch.tensor(len(data))
 # Process each frame's data
 for frame in data:
@@ -91,10 +92,10 @@ for frame in data:
     homogeneous_vertices = torch.cat([vertices, torch.ones_like(vertices[:, :, :1])], dim=-1).to(device)
     faces=faces.clone().to(torch.int32).to(device)
     rast_out, rast_out_db = dr.rasterize(glctx, homogeneous_vertices, faces, resolution=[newH-newH%8, newW-newW%8])
-    rast_out=rast_out.to(device)
-    interpolated_colors,_ = dr.interpolate(point_features, rast_out,faces)
-    print(interpolated_colors)
+    interpolated_colors,_ = dr.interpolate(point_features.contiguous(), rast_out.contiguous(),faces.contiguous())
     import ipdb;ipdb.set_trace()
+    print(interpolated_colors)
+    
 
     # #2camera cooridnate
     # camera_vertices = torch.einsum('bij,bkj->bki', rotation, vertices)
